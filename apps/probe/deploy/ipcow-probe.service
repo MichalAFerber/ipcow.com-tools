@@ -1,0 +1,24 @@
+# /etc/systemd/system/ipcow-probe.service
+[Unit]
+Description=ipcow probe server (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+EnvironmentFile=/etc/ipcow-probe.env
+WorkingDirectory=/opt/ipcow-probe
+ExecStart=/opt/ipcow-probe/ipcow-probe
+Restart=on-failure
+RestartSec=2
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# ICMP ping needs to create raw/dgram sockets:
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

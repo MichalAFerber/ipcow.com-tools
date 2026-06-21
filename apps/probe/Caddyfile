@@ -1,0 +1,22 @@
+# ipcow probe — Caddy reverse proxy with automatic HTTPS.
+# Domain is supplied via the PROBE_DOMAIN env var:
+#   ipv4.ipcow.com  (on tgwab-ipcow-ipv4)
+#   ipv6.ipcow.com  (on tgwab-ipcow-ipv6)
+#
+# Caddy adds X-Forwarded-For, which the app trusts for the IP echo.
+
+{$PROBE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+
+	# --- IPv6-only box (tgwab-ipcow-ipv6) ---
+	# HTTP-01 can't validate without a v4 path, so use the DNS-01 challenge via
+	# Cloudflare. Build Caddy with the cloudflare DNS module and uncomment:
+	#
+	#   tls {
+	#       dns cloudflare {env.CF_API_TOKEN}
+	#       resolvers 1.1.1.1
+	#   }
+	#
+	# The CF_API_TOKEN needs Zone:DNS:Edit on the ipcow.com zone.
+}
