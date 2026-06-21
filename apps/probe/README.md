@@ -22,6 +22,7 @@ run on Hetzner, one per family, fronted by Caddy for automatic HTTPS:
 | `GET /probe/http?url=` | `X-Probe-Key` | HTTP GET status + timing |
 | `GET /probe/ping?host=` | `X-Probe-Key` | ICMP ping (avg rtt) |
 | `GET /probe/smtp?host=&port=25` | `X-Probe-Key` | SMTP banner (mostly the v4 box) |
+| `GET /probe/dnsbl?ip=` | `X-Probe-Key` | blacklist sweep — checks the IP across the DNSBL set |
 | `GET /speedtest/download?bytes=` | public (CORS) | streams N bytes for a download test |
 | `POST /speedtest/upload` | public (CORS) | discards the body, reports bytes + timing |
 | `GET /ws` | public (CORS) | WebSocket echo (connectivity test) |
@@ -60,9 +61,13 @@ sudo systemctl daemon-reload && sudo systemctl enable --now ipcow-probe
 sudo PROBE_DOMAIN=ipv4.ipcow.com caddy run --config Caddyfile   # or run Caddy as a service
 ```
 
-On the **IPv6-only box**, build Caddy with the Cloudflare DNS module and use the
-DNS-01 challenge (see the commented block in the `Caddyfile`) — HTTP-01 can't validate
-without a v4 path.
+The **IPv6-only box** gets its Let's Encrypt cert via **HTTP-01 over IPv6** — no DNS-01 or
+Cloudflare token needed (verified end-to-end on `ipv6.ipcow.com`).
+
+**DNSBL accuracy:** `/probe/dnsbl` resolves via the box's system resolver. Many lists
+(Spamhaus et al.) refuse queries arriving from large public resolvers, so run a local
+recursive resolver (e.g. `unbound`) on each box for trustworthy results. Override the
+default list with `DNSBL_ZONES` (comma-separated).
 
 ## Auth
 
