@@ -22,6 +22,9 @@ run on Hetzner, one per family, fronted by Caddy for automatic HTTPS:
 | `GET /probe/http?url=` | `X-Probe-Key` | HTTP GET status + timing |
 | `GET /probe/ping?host=` | `X-Probe-Key` | ICMP ping (avg rtt) |
 | `GET /probe/smtp?host=&port=25` | `X-Probe-Key` | SMTP banner (mostly the v4 box) |
+| `GET /speedtest/download?bytes=` | public (CORS) | streams N bytes for a download test |
+| `POST /speedtest/upload` | public (CORS) | discards the body, reports bytes + timing |
+| `GET /ws` | public (CORS) | WebSocket echo (connectivity test) |
 
 Probe endpoints return structured JSON including `ok`, `stack`, `elapsed_ms`, and a
 human-readable `error` on socket failures (surfaced to users as the Ookla-style alert).
@@ -29,7 +32,7 @@ Every operation is pinned to the box's stack (`tcp4`/`tcp6`, `ip4`/`ip6`).
 
 ## Build
 
-Stdlib only — no modules to fetch.
+One dependency (`github.com/coder/websocket`); `go build` fetches it.
 
 ```bash
 cd apps/probe
