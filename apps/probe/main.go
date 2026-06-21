@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -33,6 +34,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 var (
@@ -240,6 +243,84 @@ func handleSMTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": strings.HasPrefix(banner, "220"), "stack": stack, "host": host, "port": port, "banner": banner, "elapsed_ms": sinceMS(start)})
 }
 
+func cors(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("access-control-allow-origin", allowOrigin)
+	h.Set("access-control-allow-methods", "GET, POST, OPTIONS")
+	h.Set("access-control-allow-headers", "content-type")
+}
+
+const (
+	maxSpeedBytes     = 200 << 20 // 200 MiB hard cap
+	defaultSpeedBytes = 25 << 20  // 25 MiB
+)
+
+// handleSpeedDownload streams up to maxSpeedBytes of zeros for a download throughput test.
+func handleSpeedDownload(w http.ResponseWriter, r *http.Request) {
+	cors(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	n, _ := strconv.Atoi(r.URL.Query().Get("bytes"))
+	if n <= 0 || n > maxSpeedBytes {
+		n = defaultSpeedBytes
+	}
+	h := w.Header()
+	h.Set("content-type", "application/octet-stream")
+	h.Set("cache-control", "no-store")
+	h.Set("content-length", strconv.Itoa(n))
+	buf := make([]byte, 64<<10)
+	for remaining := n; remaining > 0; {
+		chunk := len(buf)
+		if remaining < chunk {
+			chunk = remaining
+		}
+		if _, err := w.Write(buf[:chunk]); err != nil {
+			return
+		}
+		remaining -= chunk
+	}
+}
+
+// handleSpeedUpload discards the request body and reports bytes/timing for an upload test.
+func handleSpeedUpload(w http.ResponseWriter, r *http.Request) {
+	cors(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	start := time.Now()
+	n, _ := io.Copy(io.Discard, io.LimitReader(r.Body, maxSpeedBytes))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stack": stack, "bytes": n, "elapsed_ms": sinceMS(start)})
+}
+
+// handleWS is a WebSocket echo for the connectivity test — detects proxies/firewalls that
+// break WebSocket upgrades.
+func handleWS(w http.ResponseWriter, r *http.Request) {
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{"ipcow.com", "*.ipcow.com", "localhost:*"},
+	})
+	if err != nil {
+		return
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	for {
+		rctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		typ, data, err := c.Read(rctx)
+		cancel()
+		if err != nil {
+			return
+		}
+		wctx, cancel2 := context.WithTimeout(r.Context(), 10*time.Second)
+		err = c.Write(wctx, typ, data)
+		cancel2()
+		if err != nil {
+			return
+		}
+	}
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleEcho)
@@ -249,6 +330,9 @@ func main() {
 	mux.HandleFunc("/probe/http", handleHTTP)
 	mux.HandleFunc("/probe/ping", handlePing)
 	mux.HandleFunc("/probe/smtp", handleSMTP)
+	mux.HandleFunc("/speedtest/download", handleSpeedDownload)
+	mux.HandleFunc("/speedtest/upload", handleSpeedUpload)
+	mux.HandleFunc("/ws", handleWS)
 
 	srv := &http.Server{
 		Addr:         listenAddr,
