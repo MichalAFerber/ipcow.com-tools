@@ -25,6 +25,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -33,6 +35,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -321,6 +324,113 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Default DNSBLs (RBLs) checked by /probe/dnsbl. Override with DNSBL_ZONES (comma-separated).
+// For accurate results the box should resolve via a local recursive resolver (e.g. unbound):
+// many lists refuse queries that arrive via large public resolvers.
+var dnsblZones = loadZones()
+
+func loadZones() []string {
+	if v := os.Getenv("DNSBL_ZONES"); strings.TrimSpace(v) != "" {
+		var out []string
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return []string{
+		"zen.spamhaus.org", "bl.spamcop.net", "b.barracudacentral.org",
+		"dnsbl.sorbs.net", "spam.dnsbl.sorbs.net", "psbl.surriel.com",
+		"cbl.abuseat.org", "dnsbl-1.uceprotect.net", "dnsbl-2.uceprotect.net",
+		"dnsbl-3.uceprotect.net", "ix.dnsbl.manitu.net", "db.wpbl.info",
+		"bl.mailspike.net", "dnsbl.dronebl.org", "all.s5h.net",
+		"truncate.gbudb.net", "bl.0spam.org", "spamrbl.imp.ch",
+	}
+}
+
+func reverseIPv4(ip net.IP) string {
+	b := ip.To4()
+	return fmt.Sprintf("%d.%d.%d.%d", b[3], b[2], b[1], b[0])
+}
+
+func reverseIPv6(ip net.IP) string {
+	b := ip.To16()
+	var sb strings.Builder
+	for i := len(b) - 1; i >= 0; i-- {
+		fmt.Fprintf(&sb, "%x.%x.", b[i]&0x0f, b[i]>>4)
+	}
+	return strings.TrimSuffix(sb.String(), ".")
+}
+
+func dnsNotFound(err error) bool {
+	var de *net.DNSError
+	return errors.As(err, &de) && de.IsNotFound
+}
+
+type dnsblResult struct {
+	Zone   string   `json:"zone"`
+	Listed bool     `json:"listed"`
+	Codes  []string `json:"codes,omitempty"`
+	Error  string   `json:"error,omitempty"`
+}
+
+// handleDNSBL checks an IP against a set of DNS blacklists — the "blacklist sweep".
+func handleDNSBL(w http.ResponseWriter, r *http.Request) {
+	if !requireKey(w, r) {
+		return
+	}
+	ipStr := r.URL.Query().Get("ip")
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid or missing ip"})
+		return
+	}
+	rev := reverseIPv6(ip)
+	if v4 := ip.To4(); v4 != nil {
+		rev = reverseIPv4(ip)
+	}
+
+	start := time.Now()
+	zones := dnsblZones
+	results := make([]dnsblResult, len(zones))
+	sem := make(chan struct{}, 40)
+	var wg sync.WaitGroup
+	for i, zone := range zones {
+		wg.Add(1)
+		go func(i int, zone string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+			defer cancel()
+			addrs, err := net.DefaultResolver.LookupHost(ctx, rev+"."+zone)
+			res := dnsblResult{Zone: zone}
+			switch {
+			case err == nil && len(addrs) > 0:
+				res.Listed = true
+				res.Codes = addrs
+			case err != nil && !dnsNotFound(err):
+				res.Error = err.Error()
+			}
+			results[i] = res
+		}(i, zone)
+	}
+	wg.Wait()
+
+	listed := 0
+	for _, res := range results {
+		if res.Listed {
+			listed++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "stack": stack, "ip": ipStr,
+		"listed_count": listed, "total": len(zones),
+		"listings": results, "elapsed_ms": sinceMS(start),
+	})
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleEcho)
@@ -330,6 +440,7 @@ func main() {
 	mux.HandleFunc("/probe/http", handleHTTP)
 	mux.HandleFunc("/probe/ping", handlePing)
 	mux.HandleFunc("/probe/smtp", handleSMTP)
+	mux.HandleFunc("/probe/dnsbl", handleDNSBL)
 	mux.HandleFunc("/speedtest/download", handleSpeedDownload)
 	mux.HandleFunc("/speedtest/upload", handleSpeedUpload)
 	mux.HandleFunc("/ws", handleWS)
