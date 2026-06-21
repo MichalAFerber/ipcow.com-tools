@@ -304,7 +304,10 @@ func handleSpeedUpload(w http.ResponseWriter, r *http.Request) {
 // break WebSocket upgrades.
 func handleWS(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{"ipcow.com", "*.ipcow.com", "*.workers.dev", "localhost:*"},
+		// workers.dev subdomains are per-account, so scope the wildcard to ours
+		// (*.techguywithabeard.workers.dev covers the preview + version URLs) rather
+		// than *.workers.dev, which would let any account's Worker open a socket.
+		OriginPatterns: []string{"ipcow.com", "*.ipcow.com", "*.techguywithabeard.workers.dev", "localhost:*"},
 	})
 	if err != nil {
 		return
