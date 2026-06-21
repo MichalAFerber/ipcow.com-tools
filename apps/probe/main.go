@@ -42,10 +42,9 @@ import (
 )
 
 var (
-	stack       = env("PROBE_STACK", "unknown") // "ipv4" | "ipv6"
-	probeKey    = os.Getenv("PROBE_KEY")
-	allowOrigin = env("ALLOW_ORIGIN", "https://ipcow.com")
-	listenAddr  = env("PROBE_ADDR", "127.0.0.1:8000")
+	stack      = env("PROBE_STACK", "unknown") // "ipv4" | "ipv6"
+	probeKey   = os.Getenv("PROBE_KEY")
+	listenAddr = env("PROBE_ADDR", "127.0.0.1:8000")
 )
 
 func env(k, def string) string {
@@ -117,11 +116,12 @@ func handleEcho(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("access-control-allow-origin", allowOrigin)
+	cors(w)
 	writeJSON(w, http.StatusOK, map[string]any{"ip": clientIP(r), "stack": stack})
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
+	cors(w)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stack": stack})
 }
 
@@ -246,9 +246,11 @@ func handleSMTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": strings.HasPrefix(banner, "220"), "stack": stack, "host": host, "port": port, "banner": banner, "elapsed_ms": sinceMS(start)})
 }
 
+// Public, credential-less endpoints (IP echo, healthz, speedtest) allow any origin so the
+// hero/tools work from the apex, www, the workers.dev preview, and the staging host alike.
 func cors(w http.ResponseWriter) {
 	h := w.Header()
-	h.Set("access-control-allow-origin", allowOrigin)
+	h.Set("access-control-allow-origin", "*")
 	h.Set("access-control-allow-methods", "GET, POST, OPTIONS")
 	h.Set("access-control-allow-headers", "content-type")
 }
@@ -302,7 +304,7 @@ func handleSpeedUpload(w http.ResponseWriter, r *http.Request) {
 // break WebSocket upgrades.
 func handleWS(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{"ipcow.com", "*.ipcow.com", "localhost:*"},
+		OriginPatterns: []string{"ipcow.com", "*.ipcow.com", "*.workers.dev", "localhost:*"},
 	})
 	if err != nil {
 		return
