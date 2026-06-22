@@ -13,6 +13,7 @@ export * from './dns/wire';
 export * from './dns/doh';
 export * from './dns/records';
 export * from './dns/reverse';
+export * from './dns/asn';
 
 // Email deliverability
 export * from './email/spf';
