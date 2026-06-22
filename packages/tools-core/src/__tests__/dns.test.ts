@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { asnOriginQuery, parseAsnNameTxt, parseOriginTxt } from '../dns/asn';
 import { normalizeHostname } from '../dns/records';
 import { reversePointer } from '../dns/reverse';
 import { ToolError } from '../errors';
@@ -34,5 +35,56 @@ describe('reversePointer', () => {
 
   it('rejects invalid IPs', () => {
     expect(() => reversePointer('999.1.1.1')).toThrow(ToolError);
+  });
+});
+
+describe('asnOriginQuery', () => {
+  it('reverses IPv4 octets under origin.asn.cymru.com', () => {
+    expect(asnOriginQuery('9.9.9.9')).toBe('9.9.9.9.origin.asn.cymru.com');
+    expect(asnOriginQuery('8.8.4.4')).toBe('4.4.8.8.origin.asn.cymru.com');
+  });
+
+  it('nibble-reverses IPv6 under origin6.asn.cymru.com', () => {
+    const q = asnOriginQuery('2001:db8::1');
+    expect(q.endsWith('.origin6.asn.cymru.com')).toBe(true);
+    expect(q.startsWith('1.0.0.0')).toBe(true);
+    // 32 nibbles + origin6 + asn + cymru + com
+    expect(q.split('.')).toHaveLength(36);
+  });
+
+  it('rejects invalid IPs', () => {
+    expect(() => asnOriginQuery('not-an-ip')).toThrow(ToolError);
+  });
+});
+
+describe('parseOriginTxt', () => {
+  it('parses a single-origin answer', () => {
+    expect(parseOriginTxt('19281 | 9.9.9.0/24 | US | arin | 2017-09-13')).toEqual([
+      {
+        asn: 19281,
+        prefix: '9.9.9.0/24',
+        country: 'US',
+        registry: 'arin',
+        allocated: '2017-09-13',
+      },
+    ]);
+  });
+
+  it('splits a multi-origin first field into one record per ASN', () => {
+    const recs = parseOriginTxt('"64500 64501 | 203.0.113.0/24 | AU | apnic | 2011-01-01"');
+    expect(recs.map((r) => r.asn)).toEqual([64500, 64501]);
+    expect(recs[0].prefix).toBe('203.0.113.0/24');
+  });
+
+  it('ignores malformed answers', () => {
+    expect(parseOriginTxt('garbage')).toEqual([]);
+  });
+});
+
+describe('parseAsnNameTxt', () => {
+  it('extracts the AS name field', () => {
+    expect(parseAsnNameTxt('19281 | US | arin | 2017-09-13 | QUAD9-AS-1 - Quad9, US')).toBe(
+      'QUAD9-AS-1 - Quad9, US',
+    );
   });
 });
