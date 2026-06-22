@@ -23,6 +23,10 @@ export * from './email/dmarc';
 export * from './email/dkim';
 export * from './email/caa';
 export * from './email/mx';
+export * from './email/mtasts';
+
+// HTTP
+export * from './http/headers';
 
 // RDAP (whois successor)
 export * from './rdap/client';
