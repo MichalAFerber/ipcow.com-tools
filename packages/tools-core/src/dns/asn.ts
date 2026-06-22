@@ -56,8 +56,16 @@ export function parseOriginTxt(txt: string): Omit<AsnRecord, 'name'>[] {
   const parts = unquote(txt)
     .split('|')
     .map((p) => p.trim());
-  if (parts.length < 5) return [];
   const [asns, prefix, country, registry, allocated] = parts;
+  if (
+    asns === undefined ||
+    prefix === undefined ||
+    country === undefined ||
+    registry === undefined ||
+    allocated === undefined
+  ) {
+    return [];
+  }
   return asns
     .split(/\s+/)
     .filter(Boolean)
@@ -70,7 +78,7 @@ export function parseAsnNameTxt(txt: string): string {
   const parts = unquote(txt)
     .split('|')
     .map((p) => p.trim());
-  return parts.length >= 5 ? parts[4] : '';
+  return parts[4] ?? '';
 }
 
 /** Look up the AS number(s), name and BGP prefix announcing an IP, over Team Cymru DNS. */

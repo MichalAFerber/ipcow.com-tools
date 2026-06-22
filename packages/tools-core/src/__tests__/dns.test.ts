@@ -73,7 +73,7 @@ describe('parseOriginTxt', () => {
   it('splits a multi-origin first field into one record per ASN', () => {
     const recs = parseOriginTxt('"64500 64501 | 203.0.113.0/24 | AU | apnic | 2011-01-01"');
     expect(recs.map((r) => r.asn)).toEqual([64500, 64501]);
-    expect(recs[0].prefix).toBe('203.0.113.0/24');
+    expect(recs[0]?.prefix).toBe('203.0.113.0/24');
   });
 
   it('ignores malformed answers', () => {
