@@ -35,6 +35,14 @@ export function formatRecordValue(data: RecordData): string {
   return JSON.stringify(data);
 }
 
+/** Consistent only if every resolver answered (an errored leg is unknown, not agreement) and
+ *  all of them returned the same record set. */
+export function isConsistent(results: PropagationEntry[]): boolean {
+  const sets = results.map((r) => (r.error ? null : r.values.join('\n')));
+  const first = sets[0];
+  return sets.length > 0 && sets.every((s) => s !== null && s === first);
+}
+
 function valuesFor(answers: ResourceRecord[], type: RecordType): string[] {
   return answers
     .filter((a) => a.type === RECORD_TYPES[type])
@@ -67,8 +75,5 @@ export async function checkPropagation(
     }),
   );
 
-  const answered = results.filter((r) => !r.error).map((r) => r.values.join('\n'));
-  const consistent = answered.length > 0 && answered.every((v) => v === answered[0]);
-
-  return { query: host, type, consistent, results };
+  return { query: host, type, consistent: isConsistent(results), results };
 }

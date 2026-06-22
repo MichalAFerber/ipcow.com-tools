@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { asnOriginQuery, parseAsnNameTxt, parseOriginTxt } from '../dns/asn';
-import { formatRecordValue } from '../dns/propagation';
+import { formatRecordValue, isConsistent } from '../dns/propagation';
 import { normalizeHostname } from '../dns/records';
 import { reversePointer } from '../dns/reverse';
 import { ToolError } from '../errors';
@@ -87,6 +87,29 @@ describe('parseAsnNameTxt', () => {
     expect(parseAsnNameTxt('19281 | US | arin | 2017-09-13 | QUAD9-AS-1 - Quad9, US')).toBe(
       'QUAD9-AS-1 - Quad9, US',
     );
+  });
+});
+
+describe('isConsistent', () => {
+  const entry = (resolver: string, values: string[], error?: string) => ({
+    resolver,
+    values,
+    error,
+  });
+
+  it('is true only when every resolver answered with the same set', () => {
+    expect(isConsistent([entry('A', ['1.2.3.4']), entry('B', ['1.2.3.4'])])).toBe(true);
+  });
+
+  it('treats an errored leg as not consistent even if the others agree', () => {
+    expect(
+      isConsistent([entry('A', [], 'DNS resolver returned HTTP 505'), entry('B', ['1.2.3.4'])]),
+    ).toBe(false);
+  });
+
+  it('is false when resolvers disagree, and when there are none', () => {
+    expect(isConsistent([entry('A', ['1.2.3.4']), entry('B', ['5.6.7.8'])])).toBe(false);
+    expect(isConsistent([])).toBe(false);
   });
 });
 
