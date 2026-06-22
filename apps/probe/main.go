@@ -18,6 +18,7 @@
 //	GET /probe/http?url=       -> HTTP GET status + timing
 //	GET /probe/ping?host=      -> ICMP ping (avg rtt)
 //	GET /probe/smtp?host=&port=-> SMTP banner
+//	GET /probe/ssl?host=&port= -> TLS certificate details
 //
 // All /probe/* endpoints require the X-Probe-Key header to equal $PROBE_KEY.
 package main
@@ -445,6 +446,7 @@ func main() {
 	mux.HandleFunc("/probe/http", handleHTTP)
 	mux.HandleFunc("/probe/ping", handlePing)
 	mux.HandleFunc("/probe/smtp", handleSMTP)
+	mux.HandleFunc("/probe/ssl", handleSSL)
 	mux.HandleFunc("/probe/dnsbl", handleDNSBL)
 	mux.HandleFunc("/speedtest/download", handleSpeedDownload)
 	mux.HandleFunc("/speedtest/upload", handleSpeedUpload)
