@@ -14,6 +14,8 @@ export * from './dns/doh';
 export * from './dns/records';
 export * from './dns/reverse';
 export * from './dns/asn';
+export * from './dns/dnssec';
+export * from './dns/propagation';
 
 // Email deliverability
 export * from './email/spf';
