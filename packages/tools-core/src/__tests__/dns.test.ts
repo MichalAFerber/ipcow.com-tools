@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { asnOriginQuery, parseAsnNameTxt, parseOriginTxt } from '../dns/asn';
+import { formatRecordValue } from '../dns/propagation';
 import { normalizeHostname } from '../dns/records';
 import { reversePointer } from '../dns/reverse';
 import { ToolError } from '../errors';
@@ -85,6 +86,21 @@ describe('parseAsnNameTxt', () => {
   it('extracts the AS name field', () => {
     expect(parseAsnNameTxt('19281 | US | arin | 2017-09-13 | QUAD9-AS-1 - Quad9, US')).toBe(
       'QUAD9-AS-1 - Quad9, US',
+    );
+  });
+});
+
+describe('formatRecordValue', () => {
+  it('passes strings through and renders structured records stably', () => {
+    expect(formatRecordValue('93.184.216.34')).toBe('93.184.216.34');
+    expect(formatRecordValue({ preference: 10, exchange: 'mail.example.com' })).toBe(
+      '10 mail.example.com',
+    );
+    expect(
+      formatRecordValue({ flags: 257, protocol: 3, algorithm: 13, keyTag: 2068, sep: true }),
+    ).toBe('2068 13 (KSK)');
+    expect(formatRecordValue({ keyTag: 12345, algorithm: 13, digestType: 2, digest: 'abcd' })).toBe(
+      '12345 13 2',
     );
   });
 });
