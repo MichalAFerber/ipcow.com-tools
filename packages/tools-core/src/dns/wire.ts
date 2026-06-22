@@ -16,6 +16,8 @@ export const RECORD_TYPES = {
   TXT: 16,
   AAAA: 28,
   SRV: 33,
+  DS: 43,
+  DNSKEY: 48,
   CAA: 257,
 } as const;
 
@@ -54,8 +56,22 @@ export interface CaaData {
   tag: string;
   value: string;
 }
+export interface DsData {
+  keyTag: number;
+  algorithm: number;
+  digestType: number;
+  digest: string;
+}
+export interface DnskeyData {
+  flags: number;
+  protocol: number;
+  algorithm: number;
+  keyTag: number;
+  /** Secure Entry Point (key-signing key) when set. */
+  sep: boolean;
+}
 
-export type RecordData = string | SoaData | MxData | SrvData | CaaData;
+export type RecordData = string | SoaData | MxData | SrvData | CaaData | DsData | DnskeyData;
 
 export interface ResourceRecord {
   name: string;
@@ -68,6 +84,8 @@ export interface ResourceRecord {
 export interface DnsMessage {
   rcode: number;
   rcodeName: string;
+  /** Authenticated Data — the validating resolver verified the DNSSEC chain. */
+  ad: boolean;
   answers: ResourceRecord[];
 }
 
@@ -90,12 +108,17 @@ function encodeName(name: string): number[] {
   return bytes;
 }
 
-/** Build a wireformat query for a single question with RD (recursion desired) set. */
-export function encodeQuery(name: string, type: RecordType, id = 0): Uint8Array {
-  const header = [(id >> 8) & 0xff, id & 0xff, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
+/** Build a wireformat query for a single question with RD (recursion desired) set. When
+ *  `dnssecOk` is set, an EDNS0 OPT record carrying the DO bit is appended so a validating
+ *  resolver returns the Authenticated Data flag. */
+export function encodeQuery(name: string, type: RecordType, id = 0, dnssecOk = false): Uint8Array {
+  const arcount = dnssecOk ? 1 : 0;
+  const header = [(id >> 8) & 0xff, id & 0xff, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, arcount];
   const qtype = RECORD_TYPES[type];
   const question = [...encodeName(name), (qtype >> 8) & 0xff, qtype & 0xff, 0x00, 0x01];
-  return new Uint8Array([...header, ...question]);
+  // EDNS0 OPT: name=root, type=OPT(41), UDP size=4096, TTL flags=DO(0x8000), rdlength=0.
+  const opt = dnssecOk ? [0x00, 0x00, 0x29, 0x10, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00] : [];
+  return new Uint8Array([...header, ...question, ...opt]);
 }
 
 /** Read a (possibly compressed) domain name; returns the name and the offset just past it. */
@@ -135,6 +158,23 @@ function decodeTxt(buf: Uint8Array, dv: DataView, offset: number, rdlength: numb
     pos += len;
   }
   return chunks.join('');
+}
+
+/** RFC 4034 Appendix B key tag (the modern sum method; covers all current algorithms). */
+function dnskeyKeyTag(dv: DataView, offset: number, rdlength: number): number {
+  let ac = 0;
+  for (let i = 0; i < rdlength; i++) {
+    const b = dv.getUint8(offset + i);
+    ac += (i & 1) === 0 ? b << 8 : b;
+  }
+  ac += (ac >> 16) & 0xffff;
+  return ac & 0xffff;
+}
+
+function hex(buf: Uint8Array, start: number, end: number): string {
+  return Array.from(buf.subarray(start, end))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function decodeRdata(
@@ -190,11 +230,26 @@ function decodeRdata(
       const value = new TextDecoder().decode(buf.subarray(offset + 2 + tagLen, offset + rdlength));
       return { flags, tag, value };
     }
+    case RECORD_TYPES.DS:
+      return {
+        keyTag: dv.getUint16(offset),
+        algorithm: dv.getUint8(offset + 2),
+        digestType: dv.getUint8(offset + 3),
+        digest: hex(buf, offset + 4, offset + rdlength),
+      };
+    case RECORD_TYPES.DNSKEY: {
+      const flags = dv.getUint16(offset);
+      return {
+        flags,
+        protocol: dv.getUint8(offset + 2),
+        algorithm: dv.getUint8(offset + 3),
+        keyTag: dnskeyKeyTag(dv, offset, rdlength),
+        sep: (flags & 0x0001) !== 0,
+      };
+    }
     default:
       // Unknown type: hex dump of the rdata.
-      return Array.from(buf.subarray(offset, offset + rdlength))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
+      return hex(buf, offset, offset + rdlength);
   }
 }
 
@@ -203,6 +258,7 @@ export function decodeMessage(buf: Uint8Array): DnsMessage {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const flags = dv.getUint16(2);
   const rcode = flags & 0x0f;
+  const ad = (flags & 0x0020) !== 0;
   const qdcount = dv.getUint16(4);
   const ancount = dv.getUint16(6);
 
@@ -224,5 +280,5 @@ export function decodeMessage(buf: Uint8Array): DnsMessage {
     offset = rdataStart + rdlength;
   }
 
-  return { rcode, rcodeName: RCODE_NAMES[rcode] ?? `RCODE${rcode}`, answers };
+  return { rcode, rcodeName: RCODE_NAMES[rcode] ?? `RCODE${rcode}`, ad, answers };
 }

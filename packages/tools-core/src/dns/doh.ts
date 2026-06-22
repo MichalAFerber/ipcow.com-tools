@@ -6,6 +6,8 @@ export interface DohOptions {
   resolver?: string;
   /** Explicit ordered list of resolvers to try. Overrides `resolver` and the default chain. */
   resolvers?: string[];
+  /** Set the EDNS0 DO bit so a validating resolver returns the Authenticated Data flag. */
+  dnssecOk?: boolean;
   timeoutMs?: number;
 }
 
@@ -40,7 +42,7 @@ export async function dohQuery(
   type: RecordType,
   opts?: DohOptions,
 ): Promise<DnsMessage> {
-  const dns = base64url(encodeQuery(name, type));
+  const dns = base64url(encodeQuery(name, type, 0, opts?.dnssecOk));
   const list = opts?.resolvers ?? (opts?.resolver ? [opts.resolver] : DEFAULT_RESOLVERS);
   const timeoutMs = opts?.timeoutMs ?? 5000;
 
