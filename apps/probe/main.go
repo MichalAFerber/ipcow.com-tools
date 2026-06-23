@@ -17,6 +17,7 @@
 //	GET /probe/tcp?host=&port= -> TCP connect timing
 //	GET /probe/http?url=       -> HTTP GET status + timing
 //	GET /probe/ping?host=      -> ICMP ping (avg rtt)
+//	GET /probe/traceroute?host=-> traceroute hops (numeric)
 //	GET /probe/smtp?host=&port=-> SMTP banner
 //	GET /probe/ssl?host=&port= -> TLS certificate details
 //
@@ -220,6 +221,79 @@ func handlePing(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+type traceHop struct {
+	Hop     int     `json:"hop"`
+	IP      string  `json:"ip,omitempty"`
+	RTT     float64 `json:"rtt_ms,omitempty"`
+	Timeout bool    `json:"timeout,omitempty"`
+}
+
+// parseHops turns GNU/BusyBox traceroute output into structured hops. Each data line starts
+// with the hop number; "*" means the hop did not answer. We keep the first responding address
+// and RTT per hop.
+func parseHops(text string) []traceHop {
+	var hops []traceHop
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		n, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		hop := traceHop{Hop: n}
+		if fields[1] == "*" {
+			hop.Timeout = true
+		} else {
+			hop.IP = fields[1]
+			for i := 2; i < len(fields); i++ {
+				if fields[i] == "ms" {
+					if f, e := strconv.ParseFloat(fields[i-1], 64); e == nil {
+						hop.RTT = f
+						break
+					}
+				}
+			}
+		}
+		hops = append(hops, hop)
+	}
+	return hops
+}
+
+// handleTraceroute traces the network path to a host over this box's stack. traceroute's exit
+// code is unreliable (non-zero on a partial trace), so success is "we parsed at least one hop".
+// The timeout stays under the Astro /api/probe fetch timeout (12s) so the caller sees a result.
+func handleTraceroute(w http.ResponseWriter, r *http.Request) {
+	if !requireKey(w, r) {
+		return
+	}
+	host := r.URL.Query().Get("host")
+	if host == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing host"})
+		return
+	}
+	flag := "-4"
+	if stack == "ipv6" {
+		flag = "-6"
+	}
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(r.Context(), 11*time.Second)
+	defer cancel()
+	// -n numeric (skip rDNS), -q 1 one probe per hop, -w 2 wait 2s, -m 20 max hops.
+	out, _ := exec.CommandContext(ctx, "traceroute", flag, "-n", "-q", "1", "-w", "2", "-m", "20", host).CombinedOutput()
+	text := string(out)
+	hops := parseHops(text)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         len(hops) > 0,
+		"stack":      stack,
+		"host":       host,
+		"hops":       hops,
+		"raw":        tail(text, 2000),
+		"elapsed_ms": sinceMS(start),
+	})
 }
 
 func handleSMTP(w http.ResponseWriter, r *http.Request) {
@@ -445,6 +519,7 @@ func main() {
 	mux.HandleFunc("/probe/tcp", handleTCP)
 	mux.HandleFunc("/probe/http", handleHTTP)
 	mux.HandleFunc("/probe/ping", handlePing)
+	mux.HandleFunc("/probe/traceroute", handleTraceroute)
 	mux.HandleFunc("/probe/smtp", handleSMTP)
 	mux.HandleFunc("/probe/ssl", handleSSL)
 	mux.HandleFunc("/probe/dnsbl", handleDNSBL)
