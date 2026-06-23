@@ -16,6 +16,7 @@ export * from './dns/reverse';
 export * from './dns/asn';
 export * from './dns/dnssec';
 export * from './dns/propagation';
+export * from './dns/health';
 
 // Email deliverability
 export * from './email/spf';
@@ -24,9 +25,15 @@ export * from './email/dkim';
 export * from './email/caa';
 export * from './email/mx';
 export * from './email/mtasts';
+export * from './email/bimi';
+export * from './email/deliverability';
 
 // HTTP
 export * from './http/headers';
+
+// AI / crawler policy
+export * from './ai/llms';
+export * from './ai/robots';
 
 // RDAP (whois successor)
 export * from './rdap/client';
