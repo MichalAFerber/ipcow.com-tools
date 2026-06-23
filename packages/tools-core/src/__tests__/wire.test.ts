@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { type DnskeyData, type DsData, decodeMessage, encodeQuery, type MxData } from '../dns/wire';
+import {
+  type CertData,
+  type DnskeyData,
+  type DsData,
+  decodeMessage,
+  encodeQuery,
+  type LocData,
+  type MxData,
+  type NsecData,
+  type Nsec3ParamData,
+  type RrsigData,
+} from '../dns/wire';
 
 const hex = (s: string): Uint8Array =>
   new Uint8Array((s.replace(/\s+/g, '').match(/../g) ?? []).map((h) => parseInt(h, 16)));
@@ -94,5 +105,88 @@ describe('decodeMessage', () => {
     );
     const data = decodeMessage(keyResponse).answers[0]!.data as DnskeyData;
     expect(data).toEqual({ flags: 257, protocol: 3, algorithm: 13, keyTag: 2068, sep: true });
+  });
+
+  it('decodes a LOC record (equator/prime-meridian, 0 m)', () => {
+    // version=0, size/horiz/vert=0, lat=2^31, lon=2^31, alt=10000000 (the 0 m base).
+    const loc = hex(
+      '0000 81a0 0001 0001 0000 0000' +
+        '07 6578616d706c65 03 636f6d 00 001d 0001' +
+        'c00c 001d 0001 00000e10 0010 00 00 00 00 80000000 80000000 00989680',
+    );
+    const data = decodeMessage(loc).answers[0]!.data as LocData;
+    expect(data).toEqual({
+      latitude: '0 0 0.000 N',
+      longitude: '0 0 0.000 E',
+      altitudeM: 0,
+      sizeM: 0,
+      horizPreM: 0,
+      vertPreM: 0,
+    });
+  });
+
+  it('decodes a CERT record', () => {
+    // certType=1 (PKIX), keyTag=12345, algo=13, cert bytes 01020304 -> base64 AQIDBA==
+    const cert = hex(
+      '0000 81a0 0001 0001 0000 0000' +
+        '07 6578616d706c65 03 636f6d 00 0025 0001' +
+        'c00c 0025 0001 00000e10 0009 0001 3039 0d 01020304',
+    );
+    expect(decodeMessage(cert).answers[0]!.data as CertData).toEqual({
+      certType: 1,
+      certTypeName: 'PKIX',
+      keyTag: 12345,
+      algorithm: 13,
+      certificate: 'AQIDBA==',
+    });
+  });
+
+  it('decodes an NSEC3PARAM record', () => {
+    // hashAlgo=1, flags=0, iterations=10, salt=aabbccdd
+    const np = hex(
+      '0000 81a0 0001 0001 0000 0000' +
+        '07 6578616d706c65 03 636f6d 00 0033 0001' +
+        'c00c 0033 0001 00000e10 0009 01 00 000a 04 aabbccdd',
+    );
+    expect(decodeMessage(np).answers[0]!.data as Nsec3ParamData).toEqual({
+      hashAlgorithm: 1,
+      flags: 0,
+      iterations: 10,
+      salt: 'aabbccdd',
+    });
+  });
+
+  it('decodes an NSEC record (next name + type bitmap)', () => {
+    // next "example.com" (uncompressed) + window 0 bitmap covering A(1) and TXT(16).
+    const nsec = hex(
+      '0000 81a0 0001 0001 0000 0000' +
+        '07 6578616d706c65 03 636f6d 00 002f 0001' +
+        'c00c 002f 0001 00000e10 0012' +
+        '07 6578616d706c65 03 636f6d 00 00 03 40 00 80',
+    );
+    const data = decodeMessage(nsec).answers[0]!.data as NsecData;
+    expect(data.nextDomainName).toBe('example.com');
+    expect(data.types).toEqual(['A', 'TXT']);
+  });
+
+  it('decodes an RRSIG record', () => {
+    // typeCovered=A, algo=13, labels=2, ttl=3600, exp=0x6553f100, inc=0x6544ab40,
+    // keyTag=12345, signer "example.com", signature 01020304 -> AQIDBA==
+    const rrsig = hex(
+      '0000 81a0 0001 0001 0000 0000' +
+        '07 6578616d706c65 03 636f6d 00 002e 0001' +
+        'c00c 002e 0001 00000e10 0023' +
+        '0001 0d 02 00000e10 6553f100 6544ab40 3039' +
+        '07 6578616d706c65 03 636f6d 00 01020304',
+    );
+    const data = decodeMessage(rrsig).answers[0]!.data as RrsigData;
+    expect(data.typeCovered).toBe('A');
+    expect(data.algorithm).toBe(13);
+    expect(data.labels).toBe(2);
+    expect(data.keyTag).toBe(12345);
+    expect(data.signerName).toBe('example.com');
+    expect(data.signature).toBe('AQIDBA==');
+    expect(data.expiration).toBe(new Date(0x6553f100 * 1000).toISOString());
+    expect(data.inception).toBe(new Date(0x6544ab40 * 1000).toISOString());
   });
 });
