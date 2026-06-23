@@ -15,9 +15,15 @@ export const RECORD_TYPES = {
   MX: 15,
   TXT: 16,
   AAAA: 28,
+  LOC: 29,
   SRV: 33,
+  CERT: 37,
   DS: 43,
+  IPSECKEY: 45,
+  RRSIG: 46,
+  NSEC: 47,
   DNSKEY: 48,
+  NSEC3PARAM: 51,
   CAA: 257,
 } as const;
 
@@ -70,8 +76,71 @@ export interface DnskeyData {
   /** Secure Entry Point (key-signing key) when set. */
   sep: boolean;
 }
+export interface LocData {
+  /** Human-readable "D M S.sss H" (e.g. "37 23 30.900 N"). */
+  latitude: string;
+  longitude: string;
+  altitudeM: number;
+  sizeM: number;
+  horizPreM: number;
+  vertPreM: number;
+}
+export interface CertData {
+  certType: number;
+  certTypeName: string;
+  keyTag: number;
+  algorithm: number;
+  /** base64 certificate/CRL blob. */
+  certificate: string;
+}
+export interface IpseckeyData {
+  precedence: number;
+  gatewayType: number;
+  algorithm: number;
+  /** "." (none), an IPv4/IPv6 address, or a domain name, per gatewayType. */
+  gateway: string;
+  /** base64 public key. */
+  publicKey: string;
+}
+export interface RrsigData {
+  typeCovered: string;
+  algorithm: number;
+  labels: number;
+  originalTtl: number;
+  /** ISO 8601 from the signature's expiration epoch. */
+  expiration: string;
+  inception: string;
+  keyTag: number;
+  signerName: string;
+  /** base64 signature. */
+  signature: string;
+}
+export interface NsecData {
+  nextDomainName: string;
+  types: string[];
+}
+export interface Nsec3ParamData {
+  hashAlgorithm: number;
+  flags: number;
+  iterations: number;
+  /** hex salt, or "-" when empty. */
+  salt: string;
+}
 
-export type RecordData = string | SoaData | MxData | SrvData | CaaData | DsData | DnskeyData;
+export type RecordData =
+  | string
+  | SoaData
+  | MxData
+  | SrvData
+  | CaaData
+  | DsData
+  | DnskeyData
+  | LocData
+  | CertData
+  | IpseckeyData
+  | RrsigData
+  | NsecData
+  | Nsec3ParamData;
 
 export interface ResourceRecord {
   name: string;
@@ -177,6 +246,65 @@ function hex(buf: Uint8Array, start: number, end: number): string {
     .join('');
 }
 
+/** Standard base64 (with padding) of a byte slice — for opaque RDATA (certs, signatures, keys). */
+function base64(buf: Uint8Array, start: number, end: number): string {
+  let bin = '';
+  for (const b of buf.subarray(start, end)) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+const CERT_TYPES: Record<number, string> = {
+  1: 'PKIX',
+  2: 'SPKI',
+  3: 'PGP',
+  4: 'IPKIX',
+  5: 'ISPKI',
+  6: 'IPGP',
+  7: 'ACPKIX',
+  8: 'IACPKIX',
+  253: 'URI',
+  254: 'OID',
+};
+
+/** RFC 1876 size/precision octet: high nibble mantissa, low nibble base-10 exponent; cm -> m. */
+function decodeLocSize(b: number): number {
+  return (((b >> 4) & 0x0f) * Math.pow(10, b & 0x0f)) / 100;
+}
+
+/** RFC 1876 lat/long: thousandths of an arc-second, biased by 2^31 -> "D M S.sss H". */
+function decodeLocCoord(raw: number, posChar: string, negChar: string): string {
+  let v = raw - 0x80000000;
+  const hemi = v >= 0 ? posChar : negChar;
+  v = Math.abs(v);
+  const totalSec = v / 1000;
+  const deg = Math.floor(totalSec / 3600);
+  const min = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  return `${deg} ${min} ${sec.toFixed(3)} ${hemi}`;
+}
+
+/** RFC 4034 type bit maps (window block, length, bitmap)+ -> list of RR type names. */
+function decodeTypeBitmap(dv: DataView, offset: number, end: number): string[] {
+  const types: string[] = [];
+  let pos = offset;
+  while (pos + 2 <= end) {
+    const window = dv.getUint8(pos);
+    const len = dv.getUint8(pos + 1);
+    pos += 2;
+    for (let i = 0; i < len; i++) {
+      const octet = dv.getUint8(pos + i);
+      for (let bit = 0; bit < 8; bit++) {
+        if (octet & (0x80 >> bit)) {
+          const t = window * 256 + i * 8 + bit;
+          types.push(TYPE_BY_NUM[t] ?? `TYPE${t}`);
+        }
+      }
+    }
+    pos += len;
+  }
+  return types;
+}
+
 function decodeRdata(
   buf: Uint8Array,
   dv: DataView,
@@ -245,6 +373,78 @@ function decodeRdata(
         algorithm: dv.getUint8(offset + 3),
         keyTag: dnskeyKeyTag(dv, offset, rdlength),
         sep: (flags & 0x0001) !== 0,
+      };
+    }
+    case RECORD_TYPES.LOC:
+      return {
+        latitude: decodeLocCoord(dv.getUint32(offset + 4), 'N', 'S'),
+        longitude: decodeLocCoord(dv.getUint32(offset + 8), 'E', 'W'),
+        altitudeM: (dv.getUint32(offset + 12) - 10000000) / 100,
+        sizeM: decodeLocSize(dv.getUint8(offset + 1)),
+        horizPreM: decodeLocSize(dv.getUint8(offset + 2)),
+        vertPreM: decodeLocSize(dv.getUint8(offset + 3)),
+      };
+    case RECORD_TYPES.CERT: {
+      const certType = dv.getUint16(offset);
+      return {
+        certType,
+        certTypeName: CERT_TYPES[certType] ?? `TYPE${certType}`,
+        keyTag: dv.getUint16(offset + 2),
+        algorithm: dv.getUint8(offset + 4),
+        certificate: base64(buf, offset + 5, offset + rdlength),
+      };
+    }
+    case RECORD_TYPES.IPSECKEY: {
+      const gatewayType = dv.getUint8(offset + 1);
+      let p = offset + 3;
+      let gateway = '.';
+      if (gatewayType === 1) {
+        gateway = `${dv.getUint8(p)}.${dv.getUint8(p + 1)}.${dv.getUint8(p + 2)}.${dv.getUint8(p + 3)}`;
+        p += 4;
+      } else if (gatewayType === 2) {
+        let n = 0n;
+        for (let i = 0; i < 16; i++) n = (n << 8n) | BigInt(dv.getUint8(p + i));
+        gateway = formatIPv6(n);
+        p += 16;
+      } else if (gatewayType === 3) {
+        const [name, next] = readName(buf, dv, p);
+        gateway = name;
+        p = next;
+      }
+      return {
+        precedence: dv.getUint8(offset),
+        gatewayType,
+        algorithm: dv.getUint8(offset + 2),
+        gateway,
+        publicKey: base64(buf, p, offset + rdlength),
+      };
+    }
+    case RECORD_TYPES.RRSIG: {
+      const typeCovered = dv.getUint16(offset);
+      const [signerName, afterName] = readName(buf, dv, offset + 18);
+      return {
+        typeCovered: TYPE_BY_NUM[typeCovered] ?? `TYPE${typeCovered}`,
+        algorithm: dv.getUint8(offset + 2),
+        labels: dv.getUint8(offset + 3),
+        originalTtl: dv.getUint32(offset + 4),
+        expiration: new Date(dv.getUint32(offset + 8) * 1000).toISOString(),
+        inception: new Date(dv.getUint32(offset + 12) * 1000).toISOString(),
+        keyTag: dv.getUint16(offset + 16),
+        signerName,
+        signature: base64(buf, afterName, offset + rdlength),
+      };
+    }
+    case RECORD_TYPES.NSEC: {
+      const [nextDomainName, afterName] = readName(buf, dv, offset);
+      return { nextDomainName, types: decodeTypeBitmap(dv, afterName, offset + rdlength) };
+    }
+    case RECORD_TYPES.NSEC3PARAM: {
+      const saltLength = dv.getUint8(offset + 4);
+      return {
+        hashAlgorithm: dv.getUint8(offset),
+        flags: dv.getUint8(offset + 1),
+        iterations: dv.getUint16(offset + 2),
+        salt: saltLength === 0 ? '-' : hex(buf, offset + 5, offset + 5 + saltLength),
       };
     }
     default:
