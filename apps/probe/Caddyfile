@@ -1,30 +1,31 @@
 # ipcow probe — Caddy reverse proxy with automatic HTTPS.
 #
-# Per-stack echo host (JSON {ip,stack}) — supplied via PROBE_DOMAIN:
-#   ipv4.ipcow.com  (on tgwab-ipcow-ipv4)
-#   ipv6.ipcow.com  (on tgwab-ipcow-ipv6)
-# Validates with the default HTTP-01 challenge — Let's Encrypt reaches each single-stack
-# box over its own family, so no token is needed.
+# One config per box; this is the IPv4 box. For the IPv6 box, swap the hostnames as noted in
+# the trailing comments (ipv6.ipcow.com / checkipv6.ipcow.com).
 #
-# Caddy adds X-Forwarded-For, which the app trusts for the IP echo.
+# CF_API_TOKEN (Zone:DNS:Edit on ipcow.com) lives in /etc/caddy/ipcow.env (root, chmod 600) and
+# is used for the DNS-01 challenge: checkip.ipcow.com is dual-stack across the two single-stack
+# boxes, so HTTP-01 can't validate it (Let's Encrypt would reach the other box). Caddy must be
+# built with the caddy-dns/cloudflare module (xcaddy build --with github.com/caddy-dns/cloudflare).
+# See README.
 
-{$PROBE_DOMAIN} {
+# Per-stack JSON echo {ip,stack} — the site hero calls this. HTTP-01, single host.
+ipv4.ipcow.com {                                          # IPv6 box: ipv6.ipcow.com
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8000
 }
 
-# Classic plain-text endpoints (checkip.ipcow.com & friends) — supplied via CHECKIP_HOSTS:
-#   ipv4 box:  checkip.ipcow.com checkipv4.ipcow.com
-#   ipv6 box:  checkip.ipcow.com checkipv6.ipcow.com
-# checkip.ipcow.com is dual-stack (A on the v4 box + AAAA on the v6 box), so HTTP-01 can't
-# validate it — Let's Encrypt would reach the *other* box. We use the DNS-01 challenge via
-# Cloudflare instead, which needs a zone-scoped CF_API_TOKEN and a Caddy built with the
-# caddy-dns/cloudflare module (see README). Both probe boxes must set CHECKIP_HOSTS.
+# Classic plain-text checkip endpoints — plain HTTP (no redirect) so `curl checkip.ipcow.com`
+# (no scheme = port 80) returns the IP directly instead of a 308 to HTTPS.
+http://checkip.ipcow.com, http://checkipv4.ipcow.com {   # IPv6 box: http://checkip... http://checkipv6...
+	reverse_proxy 127.0.0.1:8000
+}
 
-{$CHECKIP_HOSTS} {
+# ...and the same hosts over HTTPS (DNS-01 via Cloudflare).
+checkip.ipcow.com, checkipv4.ipcow.com {                 # IPv6 box: checkip.ipcow.com, checkipv6.ipcow.com
 	encode zstd gzip
 	tls {
-		dns cloudflare {$CF_API_TOKEN}
+		dns cloudflare {env.CF_API_TOKEN}
 	}
 	reverse_proxy 127.0.0.1:8000
 }

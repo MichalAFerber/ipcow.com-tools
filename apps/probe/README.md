@@ -71,18 +71,15 @@ sudo editor /etc/ipcow-probe.env      # set PROBE_STACK + the shared PROBE_KEY
 scp deploy/ipcow-probe.service root@<box>:/etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now ipcow-probe
 
-# 4. TLS / reverse proxy. Caddy needs three env vars per box:
-#      PROBE_DOMAIN   = ipv4.ipcow.com                          (v6 box: ipv6.ipcow.com)
-#      CHECKIP_HOSTS  = "checkip.ipcow.com checkipv4.ipcow.com" (v6 box: "checkip.ipcow.com checkipv6.ipcow.com")
-#      CF_API_TOKEN   = <Cloudflare token, Zone:DNS:Edit on ipcow.com>   (for the DNS-01 challenge)
-#    checkip.ipcow.com is validated with the Cloudflare DNS-01 challenge, so Caddy must
-#    include the caddy-dns/cloudflare module:
-#      xcaddy build --with github.com/caddy-dns/cloudflare
-#    (or grab a custom build from https://caddyserver.com/download with that plugin).
-sudo PROBE_DOMAIN=ipv4.ipcow.com \
-     CHECKIP_HOSTS="checkip.ipcow.com checkipv4.ipcow.com" \
-     CF_API_TOKEN=*** \
-     caddy run --config Caddyfile   # or set these in the Caddy systemd unit
+# 4. TLS / reverse proxy. Caddyfile is concrete per box (it ships as the IPv4 box; swap to the
+#    ipv6/checkipv6 hostnames on the IPv6 box). Caddy needs:
+#      - the caddy-dns/cloudflare module — checkip.ipcow.com is dual-stack, so it can't use
+#        HTTP-01: xcaddy build --with github.com/caddy-dns/cloudflare
+#        (or a custom build from https://caddyserver.com/download with that plugin)
+#      - CF_API_TOKEN (Zone:DNS:Edit on ipcow.com) in /etc/caddy/ipcow.env (root, chmod 600),
+#        loaded by the Caddy systemd unit (EnvironmentFile=/etc/caddy/ipcow.env)
+scp Caddyfile root@<box>:/etc/caddy/Caddyfile
+ssh root@<box> "systemctl reload caddy"
 ```
 
 The `ipv4`/`ipv6.ipcow.com` echo hosts get their Let's Encrypt cert via **HTTP-01** — each
