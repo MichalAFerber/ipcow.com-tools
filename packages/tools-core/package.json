@@ -7,7 +7,7 @@
   "author": "Michal Ferber",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MichalAFerber/ipcow-tools.git"
+    "url": "git+https://github.com/MichalAFerber/ipcow.com-tools.git"
   },
   "homepage": "https://ipcow.com",
   "keywords": [
