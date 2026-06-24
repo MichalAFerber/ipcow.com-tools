@@ -1,15 +1,30 @@
 # ipcow probe — Caddy reverse proxy with automatic HTTPS.
-# Domain is supplied via the PROBE_DOMAIN env var:
+#
+# Per-stack echo host (JSON {ip,stack}) — supplied via PROBE_DOMAIN:
 #   ipv4.ipcow.com  (on tgwab-ipcow-ipv4)
 #   ipv6.ipcow.com  (on tgwab-ipcow-ipv6)
+# Validates with the default HTTP-01 challenge — Let's Encrypt reaches each single-stack
+# box over its own family, so no token is needed.
 #
 # Caddy adds X-Forwarded-For, which the app trusts for the IP echo.
 
 {$PROBE_DOMAIN} {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8000
+}
 
-	# Both boxes — including the IPv6-only one — validate with the default HTTP-01
-	# challenge: Let's Encrypt reaches ipv6.ipcow.com over IPv6, so no DNS-01 or
-	# Cloudflare token is required.
+# Classic plain-text endpoints (checkip.ipcow.com & friends) — supplied via CHECKIP_HOSTS:
+#   ipv4 box:  checkip.ipcow.com checkipv4.ipcow.com
+#   ipv6 box:  checkip.ipcow.com checkipv6.ipcow.com
+# checkip.ipcow.com is dual-stack (A on the v4 box + AAAA on the v6 box), so HTTP-01 can't
+# validate it — Let's Encrypt would reach the *other* box. We use the DNS-01 challenge via
+# Cloudflare instead, which needs a zone-scoped CF_API_TOKEN and a Caddy built with the
+# caddy-dns/cloudflare module (see README). Both probe boxes must set CHECKIP_HOSTS.
+
+{$CHECKIP_HOSTS} {
+	encode zstd gzip
+	tls {
+		dns cloudflare {$CF_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:8000
 }
