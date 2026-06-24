@@ -11,11 +11,20 @@ run on Hetzner, one per family, fronted by Caddy for automatic HTTPS:
 > **DNS must be DNS-only (grey cloud).** If proxied through Cloudflare, the IP echo
 > reflects Cloudflare's edge, not the visitor, and the forced-stack trick breaks.
 
+The same boxes also serve the classic plain-text `checkip` endpoints — the same `/` echo,
+selected by Host:
+
+| Host | Served by | DNS |
+| --- | --- | --- |
+| `checkip.ipcow.com` | both boxes (per stack) | A → v4 box **+** AAAA → v6 box, **grey-cloud** |
+| `checkipv4.ipcow.com` | v4 box | A only, **grey-cloud** |
+| `checkipv6.ipcow.com` | v6 box | AAAA only, **grey-cloud** |
+
 ## Endpoints
 
 | Route | Auth | Purpose |
 | --- | --- | --- |
-| `GET /` | public (CORS) | IP echo — `{ "ip", "stack" }`. The site hero calls this directly. |
+| `GET /` | public (CORS) | IP echo — `{ "ip", "stack" }`. The site hero calls this directly. On a `checkip*` Host it returns the legacy plain-text IP (`?json` for `{ "ip" }`). |
 | `GET /healthz` | public | liveness |
 | `GET /probe/dns?host=` | `X-Probe-Key` | resolve A/AAAA |
 | `GET /probe/tcp?host=&port=` | `X-Probe-Key` | TCP connect timing |
@@ -62,12 +71,25 @@ sudo editor /etc/ipcow-probe.env      # set PROBE_STACK + the shared PROBE_KEY
 scp deploy/ipcow-probe.service root@<box>:/etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now ipcow-probe
 
-# 4. TLS / reverse proxy
-sudo PROBE_DOMAIN=ipv4.ipcow.com caddy run --config Caddyfile   # or run Caddy as a service
+# 4. TLS / reverse proxy. Caddy needs three env vars per box:
+#      PROBE_DOMAIN   = ipv4.ipcow.com                          (v6 box: ipv6.ipcow.com)
+#      CHECKIP_HOSTS  = "checkip.ipcow.com checkipv4.ipcow.com" (v6 box: "checkip.ipcow.com checkipv6.ipcow.com")
+#      CF_API_TOKEN   = <Cloudflare token, Zone:DNS:Edit on ipcow.com>   (for the DNS-01 challenge)
+#    checkip.ipcow.com is validated with the Cloudflare DNS-01 challenge, so Caddy must
+#    include the caddy-dns/cloudflare module:
+#      xcaddy build --with github.com/caddy-dns/cloudflare
+#    (or grab a custom build from https://caddyserver.com/download with that plugin).
+sudo PROBE_DOMAIN=ipv4.ipcow.com \
+     CHECKIP_HOSTS="checkip.ipcow.com checkipv4.ipcow.com" \
+     CF_API_TOKEN=*** \
+     caddy run --config Caddyfile   # or set these in the Caddy systemd unit
 ```
 
-The **IPv6-only box** gets its Let's Encrypt cert via **HTTP-01 over IPv6** — no DNS-01 or
-Cloudflare token needed (verified end-to-end on `ipv6.ipcow.com`).
+The `ipv4`/`ipv6.ipcow.com` echo hosts get their Let's Encrypt cert via **HTTP-01** — each
+single-stack box validates over its own family, no token needed. The dual-stack
+`checkip.ipcow.com` is the exception: it's an `A` on the v4 box **and** an `AAAA` on the v6
+box, so HTTP-01 would hit the wrong box. It uses the **Cloudflare DNS-01** challenge instead
+(hence `CF_API_TOKEN` + the `caddy-dns/cloudflare` build above).
 
 **DNSBL accuracy:** `/probe/dnsbl` resolves via the box's system resolver. Many lists
 (Spamhaus et al.) refuse queries arriving from large public resolvers, so run a local
@@ -86,5 +108,9 @@ fan-out requests.
 ```bash
 curl https://ipv4.ipcow.com/                                   # {"ip":"<your v4>","stack":"ipv4"}
 curl https://ipv6.ipcow.com/                                   # {"ip":"<your v6>","stack":"ipv6"}
+curl https://checkip.ipcow.com                                 # <your v4-or-v6>   (plain text)
+curl -4 https://checkip.ipcow.com                              # forces IPv4
+curl -6 https://checkip.ipcow.com                              # forces IPv6
+curl "https://checkip.ipcow.com?json"                          # {"ip":"..."}
 curl -H "x-probe-key: $KEY" "https://ipv4.ipcow.com/probe/dns?host=example.com"
 ```

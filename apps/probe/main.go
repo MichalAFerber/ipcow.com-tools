@@ -12,6 +12,7 @@
 // Endpoints:
 //
 //	GET /                      -> IP echo: { ip, stack }      (public, CORS — the hero uses this)
+//	                              on checkip*.ipcow.com hosts -> legacy plain-text IP (?json for JSON)
 //	GET /healthz               -> { ok, stack }
 //	GET /probe/dns?host=       -> resolve A/AAAA for host
 //	GET /probe/tcp?host=&port= -> TCP connect timing
@@ -119,7 +120,58 @@ func handleEcho(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cors(w)
+	// checkip.ipcow.com & friends share this box's echo but answer in the legacy plain-text
+	// format. They're told apart from the ipv4/ipv6 JSON echo by their Host.
+	if host := hostOnly(r); strings.HasPrefix(host, "checkip") {
+		handleCheckIP(w, r, host)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ip": clientIP(r), "stack": stack})
+}
+
+// hostOnly returns the lower-cased request host without any port.
+func hostOnly(r *http.Request) string {
+	h := r.Host
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	return strings.ToLower(h)
+}
+
+// handleCheckIP serves the legacy checkip.ipcow.com plain-text contract, preserved from the
+// old Cloudflare Pages Functions:
+//
+//	curl checkip.ipcow.com        -> "<ip>\n"            (text/plain)
+//	curl checkip.ipcow.com?json   -> {"ip":"<ip>"}\n     (application/json)
+//
+// A checkipv6.* host reports only IPv6; a non-v6 caller gets "No IPv6 address detected".
+// Each box is single-stack, so the echoed IP is always this box's family.
+func handleCheckIP(w http.ResponseWriter, r *http.Request, host string) {
+	ip := clientIP(r)
+	h := w.Header()
+	h.Set("cache-control", "no-store")
+	_, asJSON := r.URL.Query()["json"]
+
+	if strings.HasPrefix(host, "checkipv6") && !strings.Contains(ip, ":") {
+		if asJSON {
+			h.Set("content-type", "application/json; charset=utf-8")
+			io.WriteString(w, "{\"ip\":null}\n")
+			return
+		}
+		h.Set("content-type", "text/plain; charset=utf-8")
+		io.WriteString(w, "No IPv6 address detected\n")
+		return
+	}
+
+	if asJSON {
+		h.Set("content-type", "application/json; charset=utf-8")
+		b, _ := json.Marshal(map[string]string{"ip": ip})
+		w.Write(b)
+		io.WriteString(w, "\n")
+		return
+	}
+	h.Set("content-type", "text/plain; charset=utf-8")
+	io.WriteString(w, ip+"\n")
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
