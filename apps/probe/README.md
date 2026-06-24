@@ -21,6 +21,7 @@ run on Hetzner, one per family, fronted by Caddy for automatic HTTPS:
 | `GET /probe/tcp?host=&port=` | `X-Probe-Key` | TCP connect timing |
 | `GET /probe/http?url=` | `X-Probe-Key` | HTTP GET status + timing |
 | `GET /probe/ping?host=` | `X-Probe-Key` | ICMP ping (avg rtt) |
+| `GET /probe/traceroute?host=` | `X-Probe-Key` | traceroute hops (numeric) |
 | `GET /probe/smtp?host=&port=25` | `X-Probe-Key` | SMTP banner (mostly the v4 box) |
 | `GET /probe/dnsbl?ip=` | `X-Probe-Key` | blacklist sweep — checks the IP across the DNSBL set |
 | `GET /speedtest/download?bytes=` | public (CORS) | streams N bytes for a download test |
@@ -30,6 +31,10 @@ run on Hetzner, one per family, fronted by Caddy for automatic HTTPS:
 Probe endpoints return structured JSON including `ok`, `stack`, `elapsed_ms`, and a
 human-readable `error` on socket failures (surfaced to users as the Ookla-style alert).
 Every operation is pinned to the box's stack (`tcp4`/`tcp6`, `ip4`/`ip6`).
+
+The `ping` and `traceroute` endpoints shell out to the system `ping`/`traceroute` binaries, so each
+box needs them installed (`apt-get install -y traceroute`); the service runs as root for the raw
+sockets they require.
 
 ## Build
 

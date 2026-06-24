@@ -25,15 +25,20 @@ cleanly reusable on its own.
 All errors are surfaced as a typed `ToolError` with a stable machine-readable code
 (`invalid_input`, `not_found`, `timeout`, `upstream_error`, …).
 
-## Install
+## Use it
+
+This package isn't published to npm — it ships **TypeScript source** directly (`main`/`types` →
+`./src/index.ts`). The site at [ipcow.com](https://ipcow.com) consumes it as a **git submodule**
+resolved through its pnpm workspace; vendor it the same way elsewhere, or clone and run it standalone:
 
 ```bash
-npm install @ipcow/tools-core
-# or: pnpm add @ipcow/tools-core
+git clone https://github.com/MichalAFerber/ipcow.com-tools.git
+cd ipcow.com-tools && pnpm install
+pnpm -F @ipcow/tools-core test
 ```
 
-> This package ships TypeScript source directly (`"type": "module"`, source `exports`), so use it
-> from a TypeScript/ESM toolchain (Vite, esbuild, tsx, Workers, modern Node, …).
+> It's pure ESM TypeScript source, so consume it from a TS/ESM toolchain (Vite, esbuild, tsx,
+> Workers, modern Node, …).
 
 ## Usage
 
