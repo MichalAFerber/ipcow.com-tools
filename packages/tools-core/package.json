@@ -35,6 +35,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./net/*": "./src/net/*.ts",
+    "./node/*": "./src/node/*.ts",
     "./*": "./src/*"
   },
   "scripts": {
