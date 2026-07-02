@@ -63,7 +63,7 @@ func handleSSL(w http.ResponseWriter, r *http.Request) {
 	}
 	start := time.Now()
 
-	d := net.Dialer{Timeout: 8 * time.Second}
+	d := net.Dialer{Timeout: 8 * time.Second, Control: safeDialControl}
 	raw, err := d.DialContext(r.Context(), tcpNetwork(), net.JoinHostPort(host, port))
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "stack": stack, "host": host, "port": port, "error": "A socket error occurred — " + err.Error() + ". The host may be down or a firewall could be blocking the connection.", "elapsed_ms": sinceMS(start)})
