@@ -204,7 +204,7 @@ func handleTCP(w http.ResponseWriter, r *http.Request) {
 	host := r.URL.Query().Get("host")
 	port := r.URL.Query().Get("port")
 	start := time.Now()
-	d := net.Dialer{Timeout: 6 * time.Second}
+	d := net.Dialer{Timeout: 6 * time.Second, Control: safeDialControl}
 	conn, err := d.DialContext(r.Context(), tcpNetwork(), net.JoinHostPort(host, port))
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "stack": stack, "host": host, "port": port, "error": "A socket error occurred — " + err.Error() + ". A firewall could be blocking the connection or the host may be down.", "elapsed_ms": sinceMS(start)})
@@ -225,7 +225,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := time.Now()
-	dialer := &net.Dialer{Timeout: 8 * time.Second}
+	dialer := &net.Dialer{Timeout: 8 * time.Second, Control: safeDialControl}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
 			return dialer.DialContext(ctx, tcpNetwork(), addr)
@@ -248,6 +248,10 @@ func handlePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host := r.URL.Query().Get("host")
+	if err := assertHostPublic(r.Context(), host); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "stack": stack, "host": host, "error": err.Error()})
+		return
+	}
 	flag := "-4"
 	if stack == "ipv6" {
 		flag = "-6"
@@ -327,6 +331,10 @@ func handleTraceroute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing host"})
 		return
 	}
+	if err := assertHostPublic(r.Context(), host); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "stack": stack, "host": host, "error": err.Error()})
+		return
+	}
 	flag := "-4"
 	if stack == "ipv6" {
 		flag = "-6"
@@ -358,7 +366,7 @@ func handleSMTP(w http.ResponseWriter, r *http.Request) {
 		port = "25"
 	}
 	start := time.Now()
-	d := net.Dialer{Timeout: 8 * time.Second}
+	d := net.Dialer{Timeout: 8 * time.Second, Control: safeDialControl}
 	conn, err := d.DialContext(r.Context(), tcpNetwork(), net.JoinHostPort(host, port))
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "stack": stack, "host": host, "port": port, "error": "A socket error occurred during the SMTP probe — " + err.Error() + ". Port 25 is often blocked on consumer and cloud networks.", "elapsed_ms": sinceMS(start)})
