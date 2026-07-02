@@ -37,3 +37,11 @@ export * from './ai/robots';
 
 // RDAP (whois successor)
 export * from './rdap/client';
+
+// Net helpers (portable — safe on Node + Workers)
+export * from './net/client-ip';
+export * from './net/short-domains';
+
+// Node-only helpers (SSRF egress guard, GeoLite2 lookup, operational at-rest crypto) live under
+// ./node/* and are intentionally NOT re-exported here — import them by subpath so their node: deps
+// never enter a Workers/edge bundle.
