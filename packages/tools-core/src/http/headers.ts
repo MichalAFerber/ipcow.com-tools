@@ -71,7 +71,15 @@ function headersToObject(h: Headers): Record<string, string> {
  */
 export async function checkHttpHeaders(
   input: string,
-  opts?: { timeoutMs?: number },
+  opts?: {
+    timeoutMs?: number;
+    /**
+     * SSRF guard, injected by the caller (kept out of this portable package so it has no Node-only
+     * DNS deps). Called for the initial URL AND every redirect hop before the request; it should
+     * throw if the target host doesn't resolve to a public address.
+     */
+    assertAllowed?: (url: string) => void | Promise<void>;
+  },
 ): Promise<HttpHeadersResult> {
   const start = normalizeUrl(input);
   const timeoutMs = opts?.timeoutMs ?? 8000;
@@ -79,6 +87,7 @@ export async function checkHttpHeaders(
   let current = start;
 
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
+    if (opts?.assertAllowed) await opts.assertAllowed(current);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let res: Response;
