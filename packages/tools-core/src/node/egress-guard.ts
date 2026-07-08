@@ -7,16 +7,16 @@ import { isIP } from 'node:net';
 
 /** True only for globally-routable unicast addresses (rejects private/loopback/link-local/etc.). */
 export function isPublicIp(ip: string): boolean {
-  const a = ip.split('%')[0];
+  const a = ip.split('%')[0] ?? '';
   const kind = isIP(a);
   if (kind === 4) {
-    const p = a.split('.').map(Number);
-    if (p[0] === 0 || p[0] === 10 || p[0] === 127) return false;
-    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return false;
-    if (p[0] === 192 && p[1] === 168) return false;
-    if (p[0] === 169 && p[1] === 254) return false; // link-local incl. 169.254.169.254 metadata
-    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return false; // CGNAT
-    if (p[0] >= 224) return false; // multicast / reserved
+    const [p0 = 0, p1 = 0] = a.split('.').map(Number);
+    if (p0 === 0 || p0 === 10 || p0 === 127) return false;
+    if (p0 === 172 && p1 >= 16 && p1 <= 31) return false;
+    if (p0 === 192 && p1 === 168) return false;
+    if (p0 === 169 && p1 === 254) return false; // link-local incl. 169.254.169.254 metadata
+    if (p0 === 100 && p1 >= 64 && p1 <= 127) return false; // CGNAT
+    if (p0 >= 224) return false; // multicast / reserved
     return true;
   }
   if (kind === 6) {
@@ -25,8 +25,8 @@ export function isPublicIp(ip: string): boolean {
     if (l.startsWith('fe80') || l.startsWith('fec0')) return false; // link/site-local
     if (l.startsWith('fc') || l.startsWith('fd')) return false; // unique-local
     if (l.startsWith('ff')) return false; // multicast
-    const m = l.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/); // v4-mapped → validate the embedded v4
-    if (m) return isPublicIp(m[1]);
+    const mapped = l.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1]; // v4-mapped → validate the embedded v4
+    if (mapped) return isPublicIp(mapped);
     return true;
   }
   return false;
@@ -47,8 +47,9 @@ export async function resolvePublicAddress(
   } catch {
     return null;
   }
-  if (!addrs.length || addrs.some((a) => !isPublicIp(a.address))) return null;
-  return { address: addrs[0].address, family: addrs[0].family };
+  const first = addrs[0];
+  if (!first || addrs.some((a) => !isPublicIp(a.address))) return null;
+  return { address: first.address, family: first.family };
 }
 
 /**

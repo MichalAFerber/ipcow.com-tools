@@ -40,10 +40,11 @@ export function makeOperationalCipher(keyring: Keyring): OperationalCipher {
 
   const parse = (blob: string) => {
     const parts = blob.split('.');
-    if (parts.length !== 5 || parts[0] !== VERSION) {
+    const [version, keyId, ivB64, ctB64, tagB64] = parts;
+    if (parts.length !== 5 || version !== VERSION || !keyId || !ivB64 || !ctB64 || !tagB64) {
       throw new Error('operational-crypto: malformed blob');
     }
-    return { keyId: parts[1], iv: ub64(parts[2]), ct: ub64(parts[3]), tag: ub64(parts[4]) };
+    return { keyId, iv: ub64(ivB64), ct: ub64(ctB64), tag: ub64(tagB64) };
   };
 
   return {
