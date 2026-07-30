@@ -1,7 +1,7 @@
 # ipcow-tools
 
 Privacy-first IP, DNS & email tooling — the reusable, MIT-licensed core behind
-[ipcow.com](https://ipcow.com).
+[ipcow.com](https://ipcow.com). **Class A — open source, MIT** (§10).
 
 - **`packages/tools-core`** — `@ipcow/tools-core`: RFC 8484 DoH client (Quad9), DNS
   record / reverse / SPF / DMARC / DKIM / CAA / MX / MTA-STS / DNSSEC / BIMI lookups, CIDR + IP
@@ -11,3 +11,13 @@ Privacy-first IP, DNS & email tooling — the reusable, MIT-licensed core behind
 
 Used in production by **[ipcow.com](https://ipcow.com)** (a separate, private repo) via a git
 submodule. Licensed under the [MIT License](./LICENSE).
+
+## Credits
+
+| Component | Version | License |
+| --- | --- | --- |
+| TypeScript toolchain (dev) | 5.x | Apache-2.0 |
+
+## Standards
+
+Built to the TGWAB Dev Standards **v2.10.1** (internal).
