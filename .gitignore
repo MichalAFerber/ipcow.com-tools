@@ -5,3 +5,6 @@ dist/
 
 # Go (apps/probe)
 ipcow-probe
+.env*
+!.env.example
+.dev.vars*
