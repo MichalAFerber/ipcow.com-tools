@@ -6,3 +6,13 @@ catalog:
   '@types/node': ^26.1.1
   typescript: ^7.0.2
   vitest: ^4.1.10
+
+# Pin vulnerable transitives to their patched floors. Both arrive dev-only, via
+# vitest → vite → postcss → nanoid; the only runtime dependency in this workspace
+# is maxmind, so neither reaches a published artifact. Kept inside the current
+# major — the advisories' "fixed in" versions are newer than the minimal safe bump.
+# This is the single source of overrides: pnpm honors either this file or
+# package.json's pnpm.overrides, never both, and silently ignores the loser.
+overrides:
+  postcss: ^8.5.23
+  nanoid: ^3.3.17
