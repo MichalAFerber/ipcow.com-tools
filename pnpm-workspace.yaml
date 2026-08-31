@@ -5,7 +5,7 @@ packages:
 catalog:
   '@types/node': ^26.2.0
   typescript: ^7.0.2
-  vitest: ^4.1.10
+  vitest: ^4.1.11
 
 # Pin vulnerable transitives to their patched floors. Both arrive dev-only, via
 # vitest → vite → postcss → nanoid; the only runtime dependency in this workspace
