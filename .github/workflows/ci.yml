@@ -35,9 +35,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-      # Production tree only (§15).
+      # Full tree, deliberately not --prod (DS §15): the dev half is the
+      # build toolchain, and what it writes into dist/ is what ships. Excluding it
+      # blinds the gate to the half whose compromise reaches users. Narrowing this
+      # is now a documented `## Deviations` line, not a default.
       - name: Audit production dependencies
-        run: pnpm audit --prod --audit-level=high
+        run: pnpm audit --audit-level=high
 
   probe:
     runs-on: ubuntu-latest
