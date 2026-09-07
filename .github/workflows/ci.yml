@@ -39,7 +39,7 @@ jobs:
       # build toolchain, and what it writes into dist/ is what ships. Excluding it
       # blinds the gate to the half whose compromise reaches users. Narrowing this
       # is now a documented `## Deviations` line, not a default.
-      - name: Audit production dependencies
+      - name: Audit dependencies (full tree)
         run: pnpm audit --audit-level=high
 
   probe:
