@@ -3,9 +3,9 @@ packages:
 
 # Versions pinned centrally; packages reference them with "catalog:".
 catalog:
-  '@types/node': ^26.6.2
+  '@types/node': ^26.6.3
   typescript: ^7.0.2
-  vitest: ^5.0.1
+  vitest: ^5.0.2
 
 # Pin vulnerable transitives to their patched floors. Both arrive dev-only, via
 # vitest → vite → postcss → nanoid; the only runtime dependency in this workspace
