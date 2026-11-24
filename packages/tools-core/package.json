@@ -45,7 +45,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "maxmind": "^5.0.8"
+    "maxmind": "^5.1.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
